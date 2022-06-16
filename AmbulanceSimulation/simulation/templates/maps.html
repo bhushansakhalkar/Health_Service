@@ -1,0 +1,390 @@
+<html>
+<head>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.2.0/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+<script src="https://unpkg.com/leaflet@1.2.0/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script type="text/javascript">
+
+    DJANGO_STATIC_URL = '{{ STATIC_URL }}';
+</script>
+</head>
+<body>
+    {% csrf_token %}
+    {%load static%}
+    <div style="display: flex; flex-direction: horizontal;">
+    <div id="map" style="width: 1000px; height: 600px;">
+    </div>
+    <div >
+        <span>Select Patient: </span>
+        <select name="patient-input" onchange="patientInfo(value)" > 
+        <option>None</option>
+            {% for patient in patients %}
+        <option value="{{patient.lat}} {{patient.lng}} {{patient.ambulanceLat}} {{patient.ambulanceLon}} {{patient.ambulanceId}} {{patient.name}}" >{{patient.name}}</option>
+        {%endfor%}
+        </select>
+        <br>
+        <br>
+        <button onclick="startDrive()">Start Drive</button>
+        <br>
+        <br>
+        <span style='margin-top:2rem' id="remainingDist">Remaining Distance:</span>
+        <br>
+        <span id="remainingTime">Remaining Time:</span>
+        <br>
+        <button style='margin-top:2rem' onclick="findHospitals()">Find Hospitals</button>
+        <div style='margin-top:2rem' id='Hospitals'>
+        </div>
+        <button onclick="start()">Start Drive</button>
+    </div>
+    </div>
+<script>
+    var map = L.map('map').setView([49.490611, 8.442370], 12);
+var mapx  
+var coordinates;
+var acoordinates;
+var marker
+var marker1
+var marker3
+var ab
+var patientName
+var patientFName
+var patientLName
+var ambulanceId
+var iconOptions = {
+iconUrl: "https://th.bing.com/th/id/R.1f4db3a27866eb13294c0dc44c319394?rik=5F1sr77lty7JIA&riu=http%3a%2f%2ficons.iconarchive.com%2ficons%2fgoogle%2fnoto-emoji-travel-places%2f1024%2f42545-ambulance-icon.png&ehk=8TutrEiVRs9pSyabPwPYUfZmad5FECb4KfRLJ2sVgYc%3d&risl=&pid=ImgRaw&r=0",
+iconSize: [50, 50]
+}
+var iconOptions2 = {
+iconUrl: "https://www.pinclipart.com/picdir/middle/531-5311700_patient-clipart-intravenous-free-patient-icon-png-download.png",
+iconSize: [50, 50]
+}
+
+var iconOptions3 = {
+iconUrl: "data:image/png;base64,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",
+iconSize: [50, 50]
+}
+
+var customIconAmbulance = L.icon(iconOptions);
+var customIconPatient = L.icon(iconOptions2);
+var customIconHospital = L.icon(iconOptions3);
+var markerOptionsAmbulance = {
+title: "MyLocation",
+clickable: true,
+draggable: false,
+icon: customIconAmbulance
+}
+var markerOptionsPatient = {
+title: "MyLocation",
+clickable: true,
+draggable: false,
+icon: customIconPatient
+}
+
+var markerOptionsHospital = {
+title: "MyLocation",
+clickable: true,
+draggable: false,
+icon: customIconHospital
+}
+
+function patientInfo(v){
+    console.log(v)
+    latitude = v.split(" ")[0]
+    longitude = v.split(" ")[1]
+    alat = v.split(" ")[2]
+    alon = v.split(" ")[3]
+    ambulanceId = v.split(" ")[4]
+    patientFName = v.split(" ")[5]
+    patientLName = v.split(" ")[6]
+    patientName = patientFName + patientLName
+    console.log(patientName)
+    
+         marker = L.marker([alat,alon], markerOptionsAmbulance);
+         marker1 = L.marker([latitude, longitude], markerOptionsPatient);
+        marker.addTo(map)
+    mapx =  L.Routing.control({
+    waypoints: [
+        L.latLng(alat,alon),
+        L.latLng(latitude, longitude)
+    ],
+    routeWhileDragging: true,
+    collapsible:true,
+    createMarker: function() { return marker; },
+    createMarker: function() { return marker1; },
+    show:false,
+    reverseWaypoints: false,
+    fitSelectedRoutes: true,
+    addWaypoints: false
+    
+}).addTo(map);
+
+    mapx.on('routeselected', function(routes){
+        coordinates = routes.route.coordinates;
+    },this)    
+
+    $.ajax({
+            url : 'http://127.0.0.1:8000/addPatient/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "lat":latitude,
+                "lng":longitude,
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+           
+
+
+}
+var objs = []
+function findHospitals(){
+    $.ajax({
+            url : 'http://127.0.0.1:8000/findHospitals/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "lat":latitude,
+                "lng":longitude,
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+                arr = data.split('b')
+                console.log(arr)
+                arr.shift()
+                for(let i=0;i<arr.length;i++){
+                    console.log(Object.assign({}, arr[i].split("\n")));
+                    ab = Object.assign({}, arr[i].split("\n"))
+                    objs.push(ab)
+                    let nn = ab[2].split(',')
+                    ob={
+                        "lng":nn[0].split("(")[1].split("'"),
+                        "lat":nn[1].split(")")[0].split(" ")[1]
+                    }
+                    console.log(ob)
+                    $('#Hospitals').append("<span style='margin-top:2rem' >Name : "+ab[0]+"</span><span style='margin-left:1rem'>Distance : "+ab[1]+"</span><button onclick='getGeo("+ob.lat+","+ob.lng+")'>Select</button><br>")
+                }
+                
+
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            
+    
+}
+
+function delay(n){
+    return new Promise(function(resolve){
+        setTimeout(resolve,n*1000);
+    });
+}
+
+
+async function start(){
+        for(var i=0;i<coordinates.length;i++){
+            //  console.log(coordinates[i].lat,coordinates[i].lng)
+
+            
+             await delay(1)
+             $.ajax({
+            url : 'http://127.0.0.1:8000/test/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "lat":coordinates[i].lat,
+                "lng":coordinates[i].lng,
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            $.ajax({
+            url : 'http://127.0.0.1:8000/test/',
+            type : 'GET',
+            data:{
+                "name":"hospital"
+            },
+            success : function(data) {              
+                var distance = data
+                console.log("data "+data)
+                document.getElementById("remainingDist").innerHTML = "Remaining Distance : "+distance+" kms"
+                var time= distance/45
+                if(distance < 0.09){
+                    distance = 0
+                    time = 0
+                }
+                time = time * 60 * 10
+                console.log("time "+time)
+                document.getElementById('remainingTime').innerHTML = "Remaining Time : "+time+" mins"
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            changeMarker(coordinates[i])
+
+      }
+     
+    }
+function getGeo(lat,lng){
+    console.log(lat,lng)
+    marker1 = L.marker([lat, lng], markerOptionsHospital);
+    // marker = L.marker([50.491761, 8.468618], markerOptionsAmbulance);
+    // marker3 = L.marker([49.491761, 8.468618], markerOptionsHospital);
+    mapx.setWaypoints([
+        L.latLng(latitude,longitude),
+        L.latLng(lat, lng),
+    ])
+    mapx.on('routeselected', function(routes){
+        coordinates = routes.route.coordinates;
+    },this)
+    $.ajax({
+            url : 'http://127.0.0.1:8000/addHospital/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "lat":lat,
+                "lng":lng,
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            $.ajax({
+            url : 'http://127.0.0.1:8000/updateDetails/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "patientFName":patientFName,
+                "patientLName":patientLName,
+                "ambulanceId":ambulanceId,
+                "lat":lat,
+                "lng":lng
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+                if(data =="Done"){
+                    alert("jhala baba")    
+                }
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+}
+
+
+let cookie = document.cookie
+    let csrfToken = cookie.substring(cookie.indexOf('=') + 1)
+
+    
+
+var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+
+
+// Creating a custom icon
+
+
+function changeroute(c){
+    marker.setLatLng(c)
+    
+    
+}
+
+
+function changeMarker(c){
+                    
+            changeroute(c)
+        }
+   
+    async function startDrive(){
+        for(var i=0;i<coordinates.length;i++){
+             // console.log(coordinates[i].lat,coordinates[i].lng)
+             
+             await delay(1)
+             $.ajax({
+            url : 'http://127.0.0.1:8000/test/',
+            type : 'POST',
+            data:{
+                'csrfmiddlewaretoken': $("input[name=csrfmiddlewaretoken]").val(),
+                "lat":coordinates[i].lat,
+                "lng":coordinates[i].lng,
+                // "alat":coordinates[i].lat,
+                // "alng":coordinates[i].lng,
+
+            },
+            success : function(data) {              
+                console.log(data)
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            $.ajax({
+            url : 'http://127.0.0.1:8000/test/',
+            type : 'GET',
+            data:{
+                "name":"ambulance"
+            },
+            success : function(data) {              
+                var distance = data
+                document.getElementById("remainingDist").innerHTML = "Remaining Distance : "+distance+" kms"
+                var time= distance/45
+                if(distance < 0.09){
+                    distance = 0
+                    time = 0
+                }
+                time = time * 60 * 10
+                document.getElementById('remainingTime').innerHTML = "Remaining Time : "+time+" mins"
+            },
+            error : function(request,error)
+            {
+                alert("Request: "+JSON.stringify(request));
+            }
+            });
+            changeMarker(coordinates[i])
+      }
+    }
+</script>
+</body>
+</html>
